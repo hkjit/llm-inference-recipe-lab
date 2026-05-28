@@ -1,0 +1,52 @@
+recipe_name: llama_w8a8_ptq_v1
+description: >
+  Baseline PTQ recipe for transformer-style LLMs with W8A8 quantization.
+  Intended as a starting point for vLLM/TRT-LLM/SGLang integration tests.
+
+model:
+  family: llama
+  checkpoint_format: huggingface
+  precision_source: fp16
+
+quantization:
+  weights:
+    bitwidth: 8
+    granularity: per_channel
+    scheme: symmetric
+    block_size: 128
+  activations:
+    bitwidth: 8
+    granularity: per_token
+    scheme: asymmetric
+  kv_cache:
+    enabled: false
+    bitwidth: 8
+
+calibration:
+  dataset_id: calibration_stub_v1
+  max_samples: 512
+  seq_len: 2048
+  strategy: entropy
+  notes: >
+    Replace with a representative blend from pretraining-like and SFT/RL
+    distributions before reporting final quality numbers.
+
+sparsity:
+  enabled: false
+  mode: none
+  target_global_sparsity: 0.0
+
+quality_gates:
+  max_eval_loss_delta: 0.15
+  max_mmlu_delta: 1.0
+  max_truthfulqa_delta: 1.0
+
+serving:
+  target_engines:
+    - vllm
+    - trt_llm
+    - sglang
+  export:
+    include_scales: true
+    include_zero_points: true
+    checkpoint_tag: w8a8-ptq-v1

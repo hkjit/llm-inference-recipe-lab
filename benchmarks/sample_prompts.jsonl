@@ -1,0 +1,5 @@
+{"prompt":"Explain PTQ vs QAT in two concise bullet points."}
+{"prompt":"What does structured sparsity mean for transformer linear layers?"}
+{"prompt":"Give a short summary of TTFT and throughput trade-offs during decode."}
+{"prompt":"Why do outlier channels matter in low-bit quantization?"}
+{"prompt":"Describe calibration data requirements for a production PTQ pipeline."}

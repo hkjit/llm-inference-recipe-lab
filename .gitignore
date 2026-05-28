@@ -1,0 +1,21 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Artifacts and local outputs
+outputs/
+artifacts/
+logs/
+profiles/
+*.log
+
+# Bench and model assets
+checkpoints/
+datasets/
+calibration_data/
