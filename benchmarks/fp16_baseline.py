@@ -10,11 +10,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import statistics
 import time
+from dataclasses import asdict
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from benchmarks.adapters import InferenceAdapter
+    from benchmarks.adapters import get_adapter
+except ModuleNotFoundError:
+    # Support direct script execution: `python3 benchmarks/fp16_baseline.py`
+    from adapters import InferenceAdapter
+    from adapters import get_adapter
 
 
 @dataclass
@@ -37,6 +45,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default="mock-vllm",
+        choices=["mock-vllm", "mock-trtllm", "mock-sglang"],
+        help="Engine adapter to benchmark.",
+    )
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional path to write benchmark metrics JSON.",
+    )
     return parser.parse_args()
 
 
@@ -60,8 +81,11 @@ def rough_token_count(text: str) -> int:
     return max(1, len(text.split()))
 
 
-def run_mock_fp16(prompts: list[str], max_new_tokens: int, seed: int) -> BenchmarkResult:
-    rng = random.Random(seed)
+def run_benchmark(
+    prompts: list[str],
+    max_new_tokens: int,
+    adapter: InferenceAdapter,
+) -> BenchmarkResult:
     ttft_ms: list[float] = []
     prompt_tokens = 0
     generated_tokens = 0
@@ -69,12 +93,9 @@ def run_mock_fp16(prompts: list[str], max_new_tokens: int, seed: int) -> Benchma
     t0 = time.perf_counter()
     for prompt in prompts:
         prompt_tokens += rough_token_count(prompt)
-
-        # Simulate first-token latency and decode length distributions.
-        this_ttft = max(5.0, rng.gauss(28.0, 6.0))
-        ttft_ms.append(this_ttft)
-        decode_len = max(8, min(max_new_tokens, int(rng.gauss(96, 20))))
-        generated_tokens += decode_len
+        sample = adapter.infer(prompt=prompt, max_new_tokens=max_new_tokens)
+        ttft_ms.append(sample.ttft_ms)
+        generated_tokens += sample.generated_tokens
     elapsed_s = time.perf_counter() - t0
 
     p50 = statistics.median(ttft_ms)
@@ -94,13 +115,14 @@ def run_mock_fp16(prompts: list[str], max_new_tokens: int, seed: int) -> Benchma
 def main() -> None:
     args = parse_args()
     prompts = load_prompts(args.prompts)
-    result = run_mock_fp16(prompts, args.max_new_tokens, args.seed)
+    adapter = get_adapter(engine=args.engine, seed=args.seed)
+    result = run_benchmark(prompts, args.max_new_tokens, adapter)
 
     total_tokens = result.prompt_tokens + result.generated_tokens
     req_per_s = result.total_requests / max(result.elapsed_s, 1e-9)
     tok_per_s = total_tokens / max(result.elapsed_s, 1e-9)
 
-    print("=== FP16 Baseline (Harness v1) ===")
+    print(f"=== FP16 Baseline (Harness v1) [{args.engine}] ===")
     print(f"requests:         {result.total_requests}")
     print(f"prompt_tokens:    {result.prompt_tokens}")
     print(f"generated_tokens: {result.generated_tokens}")
@@ -110,7 +132,16 @@ def main() -> None:
     print(f"ttft_ms_p50:      {result.ttft_ms_p50:.2f}")
     print(f"ttft_ms_p95:      {result.ttft_ms_p95:.2f}")
     print()
-    print("Next step: replace run_mock_fp16() with a real engine adapter.")
+    print("Next step: replace mock adapter implementation with real engine client calls.")
+
+    if args.output_json is not None:
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        payload = asdict(result)
+        payload["engine"] = args.engine
+        payload["req_per_s"] = req_per_s
+        payload["tok_per_s"] = tok_per_s
+        args.output_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"Wrote metrics JSON to {args.output_json}")
 
 
 if __name__ == "__main__":
